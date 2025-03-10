@@ -26,7 +26,7 @@
 
 		<input type="file" id="image_file" onchange="update_image()" accept="image/*">
 		<label>价签重命名（最长12字符，1个汉字占3个字符）</label><input id="tag_name" maxlength="12">
-	<p>
+	<p style="display: none">
 		<select id="resolution" onchange="update_image()">
 			<option value="152*152">152*152</option>
 			<option value="122*250" selected>122*250</option>
@@ -51,7 +51,7 @@
 		<input type="checkbox" id="dither_mode" onclick="update_image()">
 		<label for="dither_mode">抖动模式</label>
 	</p>
-	<p>
+	<p style="display: none">
 		<label>主控型号</label>
 		<input type="radio" id="TI" name="pack_len" value="128" checked><label for="TI">TI</label>
 		<input type="radio" id="nRF" name="pack_len" value="20"><label for="nRF">nRF</label>
