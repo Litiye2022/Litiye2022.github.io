@@ -1,1 +1,820 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
 
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1.0">
+	<meta http-equiv="content-type">
+	<title>电子价签蓝牙控制</title>
+
+	<style>
+		button,
+        a {
+			padding: 6px;
+			margin: 6px;
+			transform-origin: top left;
+			transform: scale(1.1);
+			display: inline-block;
+		}
+
+	</style>
+</head>
+
+<body>
+
+	<h1>墨水屏传图</h1>
+
+		<input type="file" id="image_file" onchange="update_image()" accept="image/*">
+		<label>价签重命名（最长12字符，1个汉字占3个字符）</label><input id="tag_name" maxlength="12">
+	<p>
+		<select id="resolution" onchange="update_image()">
+			<option value="152*152">152*152</option>
+			<option value="122*250" selected>122*250</option>
+			<option value="128*296">128*296</option>
+			<option value="400*300">400*300</option>
+			<option value="600*448">600*448</option>
+			<option value="640*384">640*384</option>
+			<option value="800*480">800*480</option>
+		</select>
+		<input type="radio" id="bw" name="type" onclick="update_image()">
+		<label for="bw">黑白</label>
+		<input type="radio" id="4gray" name="type" onclick="update_image()">
+		<label for="4gray">4阶灰度</label>
+		<input type="radio" id="bwr" name="type" onclick="update_image()" checked>
+		<label for="bwr">黑白红</label>
+		<input type="radio" id="bwr2" name="type" onclick="update_image()">
+		<label for="bwr2">黑白红(UC8159C)</label>
+		<input type="radio" id="bwry" name="type" onclick="update_image()">
+		<label for="bwry">黑白红黄</label>
+		<input type="radio" id="cmyk" name="type" onclick="update_image()">
+		<label for="cmyk">七色</label>
+		<input type="checkbox" id="dither_mode" onclick="update_image()">
+		<label for="dither_mode">抖动模式</label>
+	</p>
+	<p>
+		<label>主控型号</label>
+		<input type="radio" id="TI" name="pack_len" value="128" checked><label for="TI">TI</label>
+		<input type="radio" id="nRF" name="pack_len" value="20"><label for="nRF">nRF</label>
+	</p>
+	
+
+			模式：
+			<select id="canvas-mode">
+				<option value="paint">画笔</option>
+				<option value="font" title="输入完成后 点击：保存文本框">输入文字</option>
+			</select>
+			画笔/文字大小：
+			<input type="number" max="13" min="1" step="1" value="3" id="paint-size">
+			画笔颜色：
+			<select id="paint-color">
+				<!-- <option value="red">红色</option> -->
+				<option value="white">白色</option>
+				<option value="black">黑色</option>
+			</select>
+
+			<select id="font" title="字体" style="display: none;">
+				<option value="微软雅黑">微软雅黑</option>
+				<option value="黑体">黑体</option>
+				<option value="仿宋">仿宋</option>
+				<option value="宋体">宋体</option>
+				<option value="楷体_GB2312">楷体_GB2312</option>
+				<option value="华文行楷">华文行楷</option>
+			</select>
+			<p></p>
+			<button onclick="update_image()">重新加载</button>
+			<button id="update-text" >保存文本框</button>
+			<button onclick="clear_canvas()">清屏</button>
+			<button onclick="horizon_clip_canvas()">水平翻转</button>
+			<button onclick="vertial_clip_canvas()">垂直翻转</button>
+
+		<p>
+		<input id="edit-font"
+		style="max-width: auto; position: absolute; border: black solid 1px;background-color: rgba(0,0,0,0);display: none;overflow: auto" />
+		<canvas id="original" style="border: black solid 1px;"></canvas>
+		<canvas id="canvas" style="border: black solid 1px;"></canvas>
+	</p>
+
+	<button id="go">打开蓝牙</button>
+	<progress id="progressBar" value="0" max="100"></progress>
+	<label id="progress"></label>
+
+	<script>
+	
+		class PriceTag {
+
+			constructor() {
+				this.device = null;
+				this.onDisconnected = this.onDisconnected.bind(this);
+			}
+
+			async request() {
+				let options = {
+					"filters": [{
+						"services": [0xFFF0]
+					}],
+					"optionalServices": [0xFFF0]
+				};
+				this.device = await navigator.bluetooth.requestDevice(options);
+				if (!this.device) {
+					throw "No device selected";
+				}
+				this.device.addEventListener("gattserverdisconnected", this.onDisconnected);
+			}
+
+			async connect() {
+				if (!this.device) {
+					return Promise.reject("Device is not connected.");
+				}
+				await this.device.gatt.connect();
+			}
+
+			async readStatus() {
+				const service = await this.device.gatt.getPrimaryService(0xFFF0);
+				const characteristic = await service.getCharacteristic(0xFFF1);
+				return await characteristic.readValue();
+			}
+
+			async writeCommand(data) {
+				const service = await this.device.gatt.getPrimaryService(0xFFF0);
+				const characteristic = await service.getCharacteristic(0xFFF1);
+				await characteristic.writeValueWithResponse(data);
+			}
+
+			async writeData(data, response) {
+				const service = await this.device.gatt.getPrimaryService(0xFFF0);
+				const characteristic = await service.getCharacteristic(0xFFF2);
+				if (response) {
+					await characteristic.writeValueWithResponse(data);
+				} else {
+					await characteristic.writeValueWithoutResponse(data);
+				}
+			}
+
+			async rename(utf8array) {
+				const textEncoder = new TextEncoder(); 
+				const service = await this.device.gatt.getPrimaryService(0xFFF0);
+				const characteristic = await service.getCharacteristic(0x2A00);
+				//const characteristic = await service.getCharacteristic(0xFFF3);
+				await characteristic.writeValueWithResponse(utf8array);
+			}
+
+			async readHash() {
+				const service = await this.device.gatt.getPrimaryService(0xFFF0);
+				const characteristic = await service.getCharacteristic(0xFFF2);
+				return await characteristic.readValue();
+			}
+
+			async readProperty() {
+				const service = await this.device.gatt.getPrimaryService(0xFFF0);
+				const characteristic = await service.getCharacteristic(0xFFF3);
+				return await characteristic.readValue();
+			}
+
+			disconnect() {
+				if (!this.device) {
+					return Promise.reject("Device is not connected.");
+				}
+				return this.device.gatt.disconnect();
+			}
+
+			onDisconnected() {
+				console.log("Device is disconnected.");
+			}
+		}
+		var priceTag = new PriceTag();
+		
+		class ImageDither {
+			constructor(width, height, imageData) {
+				var image = new Array();
+				this.width = width;
+				this.height = height;
+				for (let x = -2; x < width + 2; x++) {
+					image[x] = new Array();
+					for (let y = 0; y < height + 2; y++) {
+						image[x][y] = { r: 0, g: 0, b: 0 };
+					}
+				}
+				var i = 0;
+				for (let y = 0; y < height; y++) {
+					for (let x = 0; x < width; x++) {
+						image[x][y] = { r: imageData[i], g: imageData[i + 1], b: imageData[i + 2] };
+						i += 4;
+					}
+				}
+				this.raw = image; // contains {rgb} object
+			}
+			static pixel_add(p1, p2) {
+				return { r: p1.r + p2.r, g: p1.g + p2.g, b: p1.b + p2.b };
+			}
+			static pixel_sub(p1, p2) {
+				return { r: p1.r - p2.r, g: p1.g - p2.g, b: p1.b - p2.b };
+			}
+			static pixel_mul(p, a) {
+				return { r: p.r * a, g: p.g * a, b: p.b * a };
+			}
+			static pixel_abs(p) {
+				return Math.sqrt(p.r * p.r + p.g * p.g + p.b * p.b);
+			}
+			static find_nearest(p, palette) {
+				var dmin = 99999999;
+				var i = 0, res;
+				if (typeof p == 'number') {
+					for (var c of palette) {
+						let d = Math.abs(c - p);
+						if (d < dmin) {
+							dmin = d;
+							res = i;
+						}
+						i += 1;
+					}
+					return res;
+				}
+
+				for (let c in p) {
+					if (p[c] > 255) {
+						p[c] = 255;
+					} else if (p[c] < 0) {
+						p[c] = 0;
+					}
+				}
+				for (var c of palette) {
+					let d = ImageDither.pixel_abs(ImageDither.pixel_sub(c, p));
+					if (d < dmin) {
+						dmin = d;
+						res = i;
+					}
+					i += 1;
+				}
+				return res;
+			}
+			dither(palette, mode) {
+				var width = this.width;
+				var height = this.height;
+				var image = structuredClone(this.raw);
+				var imageData = new Array(width * height * 4);
+				var i = 0;
+				if (typeof palette[0] == 'number') { // gray scale dithering
+					for (let x = -2; x < this.width + 2; x++) {
+						for (let y = 0; y < this.height + 2; y++) {
+							let p = image[x][y];
+							image[x][y] = p.r * 0.299 + p.g * 0.587 + p.b * 0.114;
+						}
+					}
+					for (let y = 0; y < height; y++) {
+						for (let x = 0; x < width; x++) {
+							let cur = image[x][y];
+							let j = ImageDither.find_nearest(cur, palette);
+							image[x][y] = palette[j];
+							let err = cur - palette[j];
+							if (mode) {
+								image[x - 2][y + 1] += err * 3 / 48;
+								image[x + 1][y + 0] += err * 7 / 48;
+								image[x - 1][y + 1] += err * 5 / 48;
+								image[x + 2][y + 0] += err * 5 / 48;
+								image[x + 0][y + 1] += err * 7 / 48;
+								image[x + 1][y + 1] += err * 5 / 48;
+								image[x + 2][y + 1] += err * 3 / 48;
+								image[x - 2][y + 2] += err * 1 / 48;
+								image[x - 1][y + 2] += err * 3 / 48;
+								image[x + 0][y + 2] += err * 5 / 48;
+								image[x + 1][y + 2] += err * 3 / 48;
+								image[x + 2][y + 2] += err * 1 / 48;
+							} else {
+								image[x + 1][y + 0] += err * 7 / 16;
+								image[x - 1][y + 1] += err * 3 / 16;
+								image[x + 0][y + 1] += err * 5 / 16;
+								image[x + 1][y + 1] += err / 16;
+							}
+							imageData[i + 0] = image[x][y];
+							imageData[i + 1] = image[x][y];
+							imageData[i + 2] = image[x][y];
+							imageData[i + 3] = 255;
+							i += 4;
+						}
+					}
+				} else { // RGB dithering
+					for (let y = 0; y < height; y++) {
+						for (let x = 0; x < width; x++) {
+							let cur = image[x][y];
+							let j = ImageDither.find_nearest(cur, palette);
+							image[x][y] = structuredClone(palette[j]);
+							let err = ImageDither.pixel_sub(cur, palette[j]);
+							if (mode) {
+								image[x + 1][y + 0] = ImageDither.pixel_add(image[x + 1][y + 0], ImageDither.pixel_mul(err, 7 / 16));
+								image[x - 1][y + 1] = ImageDither.pixel_add(image[x - 1][y + 1], ImageDither.pixel_mul(err, 3 / 16));
+								image[x + 0][y + 1] = ImageDither.pixel_add(image[x + 0][y + 1], ImageDither.pixel_mul(err, 5 / 16));
+								image[x + 1][y + 1] = ImageDither.pixel_add(image[x + 1][y + 1], ImageDither.pixel_mul(err, 1 / 16));
+							} else {
+								image[x + 2][y + 0] = ImageDither.pixel_add(image[x + 2][y + 0], ImageDither.pixel_mul(err, 5 / 48));
+								image[x - 2][y + 1] = ImageDither.pixel_add(image[x - 2][y + 1], ImageDither.pixel_mul(err, 3 / 48));
+								image[x + 1][y + 0] = ImageDither.pixel_add(image[x + 1][y + 0], ImageDither.pixel_mul(err, 7 / 48));
+								image[x - 1][y + 1] = ImageDither.pixel_add(image[x - 1][y + 1], ImageDither.pixel_mul(err, 5 / 48));
+								image[x + 0][y + 1] = ImageDither.pixel_add(image[x + 0][y + 1], ImageDither.pixel_mul(err, 7 / 48));
+								image[x + 1][y + 1] = ImageDither.pixel_add(image[x + 1][y + 1], ImageDither.pixel_mul(err, 5 / 48));
+								image[x + 2][y + 1] = ImageDither.pixel_add(image[x + 2][y + 1], ImageDither.pixel_mul(err, 3 / 48));
+								image[x - 2][y + 2] = ImageDither.pixel_add(image[x - 2][y + 2], ImageDither.pixel_mul(err, 1 / 48));
+								image[x - 1][y + 2] = ImageDither.pixel_add(image[x - 1][y + 2], ImageDither.pixel_mul(err, 3 / 48));
+								image[x + 0][y + 2] = ImageDither.pixel_add(image[x + 0][y + 2], ImageDither.pixel_mul(err, 5 / 48));
+								image[x + 1][y + 2] = ImageDither.pixel_add(image[x + 1][y + 2], ImageDither.pixel_mul(err, 3 / 48));
+								image[x + 2][y + 2] = ImageDither.pixel_add(image[x + 2][y + 2], ImageDither.pixel_mul(err, 1 / 48));
+							}
+							imageData[i + 0] = image[x][y].r;
+							imageData[i + 1] = image[x][y].g;
+							imageData[i + 2] = image[x][y].b;
+							imageData[i + 3] = 255;
+							i += 4;
+						}
+					}
+				}
+				this.result = image; // contains result ({rgb} objects or gray-scale numbers) for further processing
+				this.imageData = imageData; // contains rgba list for preview
+			}
+			static indexOf(list, value) {
+				if (typeof value === 'number') {
+					return list.indexOf(value);
+				}
+				var i = 0;
+				for (let i = 0; i < list.length; i++) {
+					if (list[i].r != value.r) continue;
+					if (list[i].g != value.g) continue;
+					if (list[i].b != value.b) continue;
+					return i;
+				}
+				throw new Error("element not found");
+			}
+
+			toBytes(palette, rot, two_pixel_one_byte) {
+				// based on 2-bit index of pixel in palette
+				var outputData1 = [], outputData2 = [];
+				var width, height;
+				width = rot ? this.height : this.width;
+				height = rot ? this.width : this.height;
+
+				for (let y = 0; y < height; y++) {
+					let a1, a2;
+					for (let x = 0; x < width; x++) {
+						let x1 = rot ? height - 1 - y : x;
+						let y1 = rot ? x : y;
+						let i = ImageDither.indexOf(palette, this.result[x1][y1]);
+						if (two_pixel_one_byte) {
+							if (x % 2 == 0) {
+								a1 = [0, 3 * 16, 4 * 16][i];
+							} else {
+								a1 += [0, 3, 4][i];
+								outputData1.push(a1);
+							}
+						} else {
+							let j = x % 8;
+							if (i == -1) {
+								throw "index not found";
+							}
+							if (j == 0) {
+								a1 = 0;
+								a2 = 0;
+							}
+							if (i & 1) {
+								a1 += 0x80 >> j;
+							}
+							if (i & 2) {
+								a2 += 0x80 >> j;
+							}
+							if (j == 7 || x == width - 1) {
+								outputData1.push(a1);
+								outputData2.push(a2);
+							}
+						}
+					}
+				}
+				if (palette.length <= 2) {
+					outputData2 = [];
+				}
+				return { o1: outputData1, o2: outputData2 };
+			}
+		}
+
+		const seven_color = [
+			{ r: 255, g: 255, b: 0 },
+			{ r: 0, g: 255, b: 0 },
+			{ r: 0, g: 0, b: 0 },
+			{ r: 255, g: 0, b: 0 },
+			{ r: 255, g: 255, b: 255 },
+			{ r: 255, g: 128, b: 0 },
+			{ r: 0, g: 0, b: 255 }
+		];
+		var outputData;
+
+		function update_image() {
+			const image_file = document.getElementById("image_file");
+			var xy = document.getElementById("resolution").value.split("*");
+			canvas.width = xy[0];
+			canvas.height = xy[1];
+			original.width = canvas.width;
+			original.height = canvas.height;
+			if (image_file.files.length > 0) {
+				const file = image_file.files[0];
+				const canvas = document.getElementById("canvas");
+				const ctx = canvas.getContext("2d");
+				const image = new Image();
+				image.src = URL.createObjectURL(file);
+				image.onload = function (event) {
+					const canvas = document.getElementById("canvas");
+					const original = document.getElementById("original");
+					var rot = (xy[0] < xy[1]) ^ (image.width < image.height);
+					if (rot) {
+						canvas.width = xy[1];
+						canvas.height = xy[0];
+					} else {
+						canvas.width = xy[0];
+						canvas.height = xy[1];
+					}
+					original.width = canvas.width;
+					original.height = canvas.height;
+					document.getElementById("original").getContext("2d").drawImage(image, 0, 0, image.width, image.height, 0, 0, canvas.width, canvas.height);
+					ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, canvas.width, canvas.height);
+					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+					var image_dither = new ImageDither(canvas.width, canvas.height, imageData.data);
+					var mode = document.getElementById("dither_mode").checked;
+					var palette;
+					if (document.getElementById("bw").checked) {
+						palette = [0, 255];
+					} else if (document.getElementById("4gray").checked) {
+						palette = [0, 0x55, 0xaa, 255];
+					} else if (document.getElementById("bwr").checked || document.getElementById("bwr2").checked) {
+						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }];
+					} else if (document.getElementById("bwry").checked) {
+						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }, { r: 255, g: 255, b: 0 }];
+					} else if (document.getElementById("cmyk").checked) {
+						palette = seven_color;
+					}
+					image_dither.dither(palette, mode);
+					res = image_dither.toBytes(palette, rot, document.getElementById("bwr2").checked);
+					outputData = res.o1.concat(res.o2);
+					for (let i = 0; i < imageData.data.length; i++) {
+						imageData.data[i] = image_dither.imageData[i];
+					}
+					ctx.putImageData(imageData, 0, 0);
+					URL.revokeObjectURL(this.src);
+				}
+			}
+		}
+		update_image();
+
+		function get_position(canvas, x, y) {
+			let rect = canvas.getBoundingClientRect()
+			return {
+				x: x - rect.left * (canvas.width / rect.width),
+				y: y - rect.top * (canvas.height / rect.height)
+			}
+		}
+
+		function clear_canvas() {
+			if (confirm('确认清除屏幕?')) {
+				const canvas = document.getElementById('canvas');
+				const ctx = canvas.getContext("2d");
+				ctx.fillStyle = 'white';
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+			}
+		}
+
+		function horizon_clip_canvas() {
+			const canvas = document.getElementById('canvas');
+			const ctx = canvas.getContext("2d");
+			const sourceData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			var newData = ctx.createImageData(canvas.width, canvas.height);
+			for (var i = 0, h = sourceData.height; i < h; i++) {
+				for (j = 0, w = sourceData.width; j < w; j++) {
+					newData.data[i * w * 4 + j * 4 + 0] =
+						sourceData.data[i * w * 4 + (w - j) * 4 + 0];
+					newData.data[i * w * 4 + j * 4 + 1] =
+						sourceData.data[i * w * 4 + (w - j) * 4 + 1];
+					newData.data[i * w * 4 + j * 4 + 2] =
+						sourceData.data[i * w * 4 + (w - j) * 4 + 2];
+					newData.data[i * w * 4 + j * 4 + 3] =
+						sourceData.data[i * w * 4 + (w - j) * 4 + 3];
+				}
+			}
+			ctx.putImageData(newData, 0, 0);
+		}
+
+		function vertial_clip_canvas() {
+			const canvas = document.getElementById('canvas');
+			const ctx = canvas.getContext("2d");
+			const sourceData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			var newData = ctx.createImageData(canvas.width, canvas.height);
+			for (var i = 0, h = sourceData.height; i < h; i++) {
+				for (var j = 0, w = sourceData.width; j < w; j++) {
+					newData.data[i * w * 4 + j * 4 + 0] =
+						sourceData.data[(h - i) * w * 4 + j * 4 + 0];
+					newData.data[i * w * 4 + j * 4 + 1] =
+						sourceData.data[(h - i) * w * 4 + j * 4 + 1];
+					newData.data[i * w * 4 + j * 4 + 2] =
+						sourceData.data[(h - i) * w * 4 + j * 4 + 2];
+					newData.data[i * w * 4 + j * 4 + 3] =
+						sourceData.data[(h - i) * w * 4 + j * 4 + 3];
+				}
+			}
+			ctx.putImageData(newData, 0, 0);
+		}
+
+		function delay(ms) {
+			return new Promise(resolve => setTimeout(resolve, ms));
+		}
+		document.getElementById("go").addEventListener("click", async event => {
+			var PACK_LEN, BURST_NUM;
+			const textEncoder = new TextEncoder();
+			const utf8array = textEncoder.encode(document.getElementById("tag_name").value);
+			if (utf8array.length > 12){
+				alert("名字太长");
+				return;
+			}
+			for (e of document.getElementsByName("pack_len")) {
+				if (e.checked) {
+					PACK_LEN = Number(e.value);
+					BURST_NUM = Math.round(8192 / PACK_LEN);
+					break;
+				}
+			}
+			try {
+				await priceTag.request();
+				for (var retry = 0; ;) {
+					try {
+						await priceTag.connect();
+						break;
+					}
+					catch (error) {
+						console.error(error);
+						if (++retry == 4) {
+							throw error;
+						}
+						console.log("retry");
+					}
+				}
+				var value = await priceTag.readProperty();
+				var width = value.getUint16(0, true);
+				var height = value.getUint16(2, true);
+				var type = value.getUint8(4);
+				console.log(`${width}*${height}, type=${type}`);
+				await priceTag.writeCommand(Uint8Array.of(82)); //Reset
+				for(var retry = 0;; retry++){
+					var r = await priceTag.readStatus();
+					if (r.getUint8(0) == 0x42) {
+						console.log('initialized');
+						break;
+					} else {
+						if (retry < 10){
+							await delay(20);
+						}else{
+							throw "md5 uninitialized";
+						}
+					}
+				}
+				
+					const canvas = document.getElementById("canvas");
+					const ctx = canvas.getContext("2d");
+					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+					var image_dither = new ImageDither(canvas.width, canvas.height, imageData.data);
+					var mode = document.getElementById("dither_mode").checked;
+					var palette;
+					if (document.getElementById("bw").checked) {
+						palette = [0, 255];
+					} else if (document.getElementById("4gray").checked) {
+						palette = [0, 0x55, 0xaa, 255];
+					} else if (document.getElementById("bwr").checked || document.getElementById("bwr2").checked) {
+						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }];
+					} else if (document.getElementById("bwry").checked) {
+						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }, { r: 255, g: 255, b: 0 }];
+					} else if (document.getElementById("cmyk").checked) {
+						palette = seven_color;
+					}
+					image_dither.dither(palette, mode);
+					var xy = document.getElementById("resolution").value.split("*");
+					var rot = (xy[0] < xy[1]) ^ (canvas.width < canvas.height);
+					res = image_dither.toBytes(palette, rot, document.getElementById("bwr2").checked);
+					outputData = res.o1.concat(res.o2);
+					for (let i = 0; i < imageData.data.length; i++) {
+						imageData.data[i] = image_dither.imageData[i];
+					}
+					ctx.putImageData(imageData, 0, 0);
+
+				var binData = structuredClone(outputData);
+
+				while (binData.length % PACK_LEN) {
+					binData.push(0);
+				}
+				for (i = 0; i < binData.length; i += PACK_LEN) {
+					chunk = Uint8Array.from(binData.slice(i, i + PACK_LEN));
+					await priceTag.writeData(chunk, i % (PACK_LEN * BURST_NUM) == 0 || i + PACK_LEN >= binData.length);
+					document.getElementById("progressBar").value = Math.round(i / binData.length * 100);
+					document.getElementById("progress").innerHTML = `${i}/${binData.length}`;
+				}
+				await priceTag.writeCommand(Uint8Array.of(0x46));
+				for(var retry = 0;; retry++){
+					var r = await priceTag.readStatus();
+					if (r.getUint8(0) == 0x44) {
+						console.log('finalized');
+						break;
+					} else {
+						if (retry < 10){
+							await delay(20);
+						}else{
+							throw "md5 unfinalized";
+						}
+					}
+				}
+				document.getElementById("progressBar").value = 100;
+				document.getElementById("progress").innerHTML = "";
+				if (utf8array.length > 0){
+					await priceTag.rename(utf8array);
+				}
+				
+			} catch (error) {
+				console.error(error);
+			} finally {
+				priceTag.disconnect();
+			}
+		});
+/*****************************以上是移植的**************************************/
+		document.body.onload = () => {
+			setInterval(() => {
+				const { localeTimeString, year, month, day, week } = getUnixTime();
+				document.getElementById('time-setter').innerText = `设置时间为：${year}-${month}-${day} ${localeTimeString} 星期${week}`;
+			}, 1000);
+
+			const canvas = document.getElementById('canvas');
+			const ctx = canvas.getContext("2d");
+			ctx.fillStyle = 'white';
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			let is_allow_drawing = false;
+			let is_allow_move_editor = false;
+			const image_mode = document.getElementById('canvas-mode');
+			const paint_size = document.getElementById('paint-size');
+			const paint_color = document.getElementById('paint-color');
+			const editor = document.getElementById('edit-font');
+			const font = document.getElementById('font');
+			//document.getElementById('dithering').value = 'bayer';
+			image_mode.value = 'paint';
+			paint_color.value = 'black';
+			font.value = '黑体';
+
+			editor.onmousemove = function (e) {
+				editor.style.fontSize = `${paint_size.value * 10}px`;
+				editor.style.color = paint_color.value;
+				editor.style.fontFamily = font.value;
+				editor.style.fontWeight = 'bold';
+
+				if (is_allow_move_editor) {
+					const { x, y } = get_position(canvas, e.clientX, e.clientY);
+					if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
+						return;
+					}
+
+					editor.style.left = `${e.clientX - 20}px`;
+					editor.style.top = `${e.clientY - 20}px`;
+
+				}
+			}
+
+			editor.onmousedown = function (e) {
+				is_allow_move_editor = true;
+			}
+
+			editor.onmouseup = function (e) {
+				is_allow_move_editor = false;
+			}
+
+			document.getElementById('update-text').onclick = function () {
+				if (!editor.value.length) {
+					alert('请先输入文字');
+					return;
+				}
+				editor.style.display = 'none';
+				ctx.beginPath();
+				ctx.font = `bold ${paint_size.value * 10}px ${font.value}`;
+				ctx.fillStyle = paint_color.value;
+				const { x, y } = get_position(canvas, parseInt(editor.style.left), parseInt(editor.style.top) + paint_size.value * 10);
+				ctx.fillText(editor.value, x, y);
+			}
+
+			document.getElementById('resolution').onchange = function () {
+				const size = document.getElementById('resolution').value;
+				console.log(size)
+				if(size == "128*296"){
+					canvasRotate = 90;
+				}
+				else{
+					canvasRotate = 0;
+				}
+				width = parseInt(size.split('*')[0])
+				height = parseInt(size.split('*')[1])
+				document.getElementById('canvas').width = width;
+				document.getElementById('canvas').height = height;
+				update_image();
+			}
+
+			image_mode.onchange = function (e) {
+				if (image_mode.value === 'font') {
+					document.getElementById('update-text').style.display = 'inline-block';
+					document.getElementById('font').style.display = 'inline-block';
+
+					editor.style.display = 'block';
+					editor.style.left = `${e.clientX}px`;
+					editor.style.top = `${e.clientY}px`;
+					return;
+				}
+				document.getElementById('update-text').style.display = 'none';
+				document.getElementById('font').style.display = 'none';
+				editor.style.display = 'none';
+			}
+
+			paint_size.onchange = function () {
+				if (image_mode.value === 'font') {
+					editor.style.fontSize = `${paint_size.value * 10}px`;
+				}
+			}
+
+			paint_color.onchange = function () {
+				if (image_mode.value === 'font') {
+					editor.style.color = paint_color.value;
+				}
+			}
+
+			font.onchange = function () {
+				if (image_mode.value === 'font') {
+					editor.style.fontFamily = font.value;
+				}
+			}
+
+			canvas.onmousedown = function (e) {
+				let ele = get_position(canvas, e.clientX, e.clientY)
+				let { x, y } = ele
+
+				switch (image_mode.value) {
+					case 'paint':
+						is_allow_drawing = true;
+						ctx.beginPath();
+						ctx.moveTo(x, y);
+						break;
+					case 'font':
+						editor.style.display = 'block';
+						editor.style.left = `${e.clientX}px`;
+						editor.style.top = `${e.clientY}px`;
+						editor.style.fontSize = `${paint_size.value * 10}px`;
+						editor.style.color = paint_color.value;
+						editor.style.fontFamily = font.value;
+						editor.style.fontWeight = 'bold';
+
+						break
+					default:
+						break;
+				}
+			};
+
+			canvas.onmousemove = (e) => {
+				let ele = get_position(canvas, e.clientX, e.clientY)
+				let { x, y } = ele;
+				switch (image_mode.value) {
+					case 'paint':
+						if (is_allow_drawing) {
+							ctx.lineWidth = paint_size.value;
+							ctx.strokeStyle = paint_color.value;
+							ctx.lineTo(x, y);
+							ctx.stroke();
+						}
+						break;
+					case 'font':
+						break;
+
+					default:
+						break;
+				}
+			}
+
+			canvas.onmouseup = function () {
+				switch (image_mode.value) {
+					case 'paint':
+						is_allow_drawing = false;
+						break;
+
+					case 'font':
+						editor.focus();
+						is_allow_move_editor = false;
+						break;
+
+					default:
+						break;
+				}
+			}
+
+			canvas.onmouseleave = function () {
+				if (image_mode.value === 'paint') {
+					is_allow_drawing = false;
+				}
+			}
+		}
+
+
+	</script>
+</body>
+
+</html>
