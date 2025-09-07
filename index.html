@@ -1,820 +1,211 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-
+<!doctype html>
+<html lang="en">
 <head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width,initial-scale=1.0">
-	<meta http-equiv="content-type">
-	<title>电子价签蓝牙控制</title>
-
-	<style>
-		button,
-        a {
-			padding: 6px;
-			margin: 6px;
-			transform-origin: top left;
-			transform: scale(1.1);
-			display: inline-block;
-		}
-
-	</style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>电子墨水屏蓝牙控制器</title>
+	<link rel="stylesheet" href="css/main.css?v=20250607">
 </head>
 
 <body>
+    <div class="main">
+        <h3>电子墨水屏蓝牙控制器</h3>
+        <fieldset>
+            <legend>蓝牙连接</legend>
+            <div class="flex-container">
+                <div class="flex-group">
+                    <button id="connectbutton" type="button" class="primary" onclick="preConnect()">连接</button>
+                    <button id="reconnectbutton" type="button" class="secondary" onclick="reConnect()">重连</button>
+					<button type="button" class="secondary" onclick="clearLog()">清空日志</button>
+                </div>
+				<div class="flex-group debug">
+					<label for="epddriver">驱动</label>
+					<select id="epddriver" onchange="updateDitcherOptions()">
+						<option value="01" data-color="threeColor" data-size="7.5_800_480">UC8179(7.5三色)</option>
+					</select>
+				</div>
+				<div class="flex-group debug">
+					<label for="epdpins">引脚</label>
+					<input id="epdpins" type="text" value="">
+					<button id="setDriverbutton" type="button" class="primary" onclick="setDriver()">确认</button>
+				</div>
+                <div class="flex-group">
+                    <button id="calendarmodebutton" type="button" class="primary" onclick="syncTime(1)">日历模式</button>
+                    <button id="clockmodebutton" type="button" class="primary" onclick="syncTime(2)">时钟模式</button>
+					<button id="clearscreenbutton" type="button" class="secondary" onclick="clearScreen()">清除屏幕</button>
+                </div>
+                <div class="flex-group debug">
+                    <input type="text" id="cmdTXT" value="">
+                    <button id="sendcmdbutton" type="button" class="primary" onclick="sendcmd()">发送命令</button>
+                </div>
+				<div>
+					选择固件: <input type="file" accept=".bin" id="binfile" onclick="resetFileSelector()">
+					<button id="otabutton" type="button" class="primary" onclick="sendFile()" >上传固件</button>
+					<button id="enterbootbutton" type="button" class="primary" onclick="enterboot()">进入OTA</button>
+					<br>
+					<div ><b>状态：</b><span id="ota_status"></span></div>
+				</div>
+            </div>
+			<div id="log"></div>
+        </fieldset>
 
-	<h1>墨水屏传图</h1>
-
-		<input type="file" id="image_file" onchange="update_image()" accept="image/*">
-		<label>价签重命名（最长12字符，1个汉字占3个字符）</label><input id="tag_name" maxlength="12">
-	<p style="display: none">
-		<select id="resolution" onchange="update_image()">
-			<option value="152*152">152*152</option>
-			<option value="122*250" selected>122*250</option>
-			<option value="128*296">128*296</option>
-			<option value="400*300">400*300</option>
-			<option value="600*448">600*448</option>
-			<option value="640*384">640*384</option>
-			<option value="800*480">800*480</option>
-		</select>
-		<input type="radio" id="bw" name="type" onclick="update_image()">
-		<label for="bw">黑白</label>
-		<input type="radio" id="4gray" name="type" onclick="update_image()">
-		<label for="4gray">4阶灰度</label>
-		<input type="radio" id="bwr" name="type" onclick="update_image()" checked>
-		<label for="bwr">黑白红</label>
-		<input type="radio" id="bwr2" name="type" onclick="update_image()">
-		<label for="bwr2">黑白红(UC8159C)</label>
-		<input type="radio" id="bwry" name="type" onclick="update_image()">
-		<label for="bwry">黑白红黄</label>
-		<input type="radio" id="cmyk" name="type" onclick="update_image()">
-		<label for="cmyk">七色</label>
-		<input type="checkbox" id="dither_mode" onclick="update_image()">
-		<label for="dither_mode">抖动模式</label>
-	</p>
-	<p style="display: none">
-		<label>主控型号</label>
-		<input type="radio" id="TI" name="pack_len" value="128" checked><label for="TI">TI</label>
-		<input type="radio" id="nRF" name="pack_len" value="20"><label for="nRF">nRF</label>
-	</p>
-	<p>
-
-			模式：
-			<select id="canvas-mode">
-				<option value="paint">画笔</option>
-				<option value="font" title="输入完成后 点击：保存文本框">输入文字</option>
-			</select>
-			画笔/文字大小：
-			<input type="number" max="13" min="1" step="1" value="3" id="paint-size">
-			画笔颜色：
-			<select id="paint-color">
-				<!-- <option value="red">红色</option> -->
-				<option value="white">白色</option>
-				<option value="black">黑色</option>
-			</select>
-
-			<select id="font" title="字体" style="display: none;">
-				<option value="微软雅黑">微软雅黑</option>
-				<option value="黑体">黑体</option>
-				<option value="仿宋">仿宋</option>
-				<option value="宋体">宋体</option>
-				<option value="楷体_GB2312">楷体_GB2312</option>
-				<option value="华文行楷">华文行楷</option>
-			</select>
-			<p></p>
-			<button onclick="update_image()">重新加载</button>
-			<button id="update-text" >保存文本框</button>
-			<button onclick="clear_canvas()">清屏</button>
-			<button onclick="horizon_clip_canvas()">水平翻转</button>
-			<button onclick="vertial_clip_canvas()">垂直翻转</button>
-	</p>
-		<p>
-		<input id="edit-font"
-		style="max-width: auto; position: absolute; border: black solid 1px;background-color: rgba(0,0,0,0);display: none;overflow: auto" />
-		<canvas id="original" style="border: black solid 1px;"></canvas>
-		<canvas id="canvas" style="border: black solid 1px;"></canvas>
-	</p>
-
-	<button id="go">打开蓝牙</button>
-	<progress id="progressBar" value="0" max="100"></progress>
-	<label id="progress"></label>
-
-	<script>
-	
-		class PriceTag {
-
-			constructor() {
-				this.device = null;
-				this.onDisconnected = this.onDisconnected.bind(this);
-			}
-
-			async request() {
-				let options = {
-					"filters": [{
-						"services": [0xFFF0]
-					}],
-					"optionalServices": [0xFFF0]
-				};
-				this.device = await navigator.bluetooth.requestDevice(options);
-				if (!this.device) {
-					throw "No device selected";
-				}
-				this.device.addEventListener("gattserverdisconnected", this.onDisconnected);
-			}
-
-			async connect() {
-				if (!this.device) {
-					return Promise.reject("Device is not connected.");
-				}
-				await this.device.gatt.connect();
-			}
-
-			async readStatus() {
-				const service = await this.device.gatt.getPrimaryService(0xFFF0);
-				const characteristic = await service.getCharacteristic(0xFFF1);
-				return await characteristic.readValue();
-			}
-
-			async writeCommand(data) {
-				const service = await this.device.gatt.getPrimaryService(0xFFF0);
-				const characteristic = await service.getCharacteristic(0xFFF1);
-				await characteristic.writeValueWithResponse(data);
-			}
-
-			async writeData(data, response) {
-				const service = await this.device.gatt.getPrimaryService(0xFFF0);
-				const characteristic = await service.getCharacteristic(0xFFF2);
-				if (response) {
-					await characteristic.writeValueWithResponse(data);
-				} else {
-					await characteristic.writeValueWithoutResponse(data);
-				}
-			}
-
-			async rename(utf8array) {
-				const textEncoder = new TextEncoder(); 
-				const service = await this.device.gatt.getPrimaryService(0xFFF0);
-				const characteristic = await service.getCharacteristic(0x2A00);
-				//const characteristic = await service.getCharacteristic(0xFFF3);
-				await characteristic.writeValueWithResponse(utf8array);
-			}
-
-			async readHash() {
-				const service = await this.device.gatt.getPrimaryService(0xFFF0);
-				const characteristic = await service.getCharacteristic(0xFFF2);
-				return await characteristic.readValue();
-			}
-
-			async readProperty() {
-				const service = await this.device.gatt.getPrimaryService(0xFFF0);
-				const characteristic = await service.getCharacteristic(0xFFF3);
-				return await characteristic.readValue();
-			}
-
-			disconnect() {
-				if (!this.device) {
-					return Promise.reject("Device is not connected.");
-				}
-				return this.device.gatt.disconnect();
-			}
-
-			onDisconnected() {
-				console.log("Device is disconnected.");
-			}
-		}
-		var priceTag = new PriceTag();
-		
-		class ImageDither {
-			constructor(width, height, imageData) {
-				var image = new Array();
-				this.width = width;
-				this.height = height;
-				for (let x = -2; x < width + 2; x++) {
-					image[x] = new Array();
-					for (let y = 0; y < height + 2; y++) {
-						image[x][y] = { r: 0, g: 0, b: 0 };
-					}
-				}
-				var i = 0;
-				for (let y = 0; y < height; y++) {
-					for (let x = 0; x < width; x++) {
-						image[x][y] = { r: imageData[i], g: imageData[i + 1], b: imageData[i + 2] };
-						i += 4;
-					}
-				}
-				this.raw = image; // contains {rgb} object
-			}
-			static pixel_add(p1, p2) {
-				return { r: p1.r + p2.r, g: p1.g + p2.g, b: p1.b + p2.b };
-			}
-			static pixel_sub(p1, p2) {
-				return { r: p1.r - p2.r, g: p1.g - p2.g, b: p1.b - p2.b };
-			}
-			static pixel_mul(p, a) {
-				return { r: p.r * a, g: p.g * a, b: p.b * a };
-			}
-			static pixel_abs(p) {
-				return Math.sqrt(p.r * p.r + p.g * p.g + p.b * p.b);
-			}
-			static find_nearest(p, palette) {
-				var dmin = 99999999;
-				var i = 0, res;
-				if (typeof p == 'number') {
-					for (var c of palette) {
-						let d = Math.abs(c - p);
-						if (d < dmin) {
-							dmin = d;
-							res = i;
-						}
-						i += 1;
-					}
-					return res;
-				}
-
-				for (let c in p) {
-					if (p[c] > 255) {
-						p[c] = 255;
-					} else if (p[c] < 0) {
-						p[c] = 0;
-					}
-				}
-				for (var c of palette) {
-					let d = ImageDither.pixel_abs(ImageDither.pixel_sub(c, p));
-					if (d < dmin) {
-						dmin = d;
-						res = i;
-					}
-					i += 1;
-				}
-				return res;
-			}
-			dither(palette, mode) {
-				var width = this.width;
-				var height = this.height;
-				var image = structuredClone(this.raw);
-				var imageData = new Array(width * height * 4);
-				var i = 0;
-				if (typeof palette[0] == 'number') { // gray scale dithering
-					for (let x = -2; x < this.width + 2; x++) {
-						for (let y = 0; y < this.height + 2; y++) {
-							let p = image[x][y];
-							image[x][y] = p.r * 0.299 + p.g * 0.587 + p.b * 0.114;
-						}
-					}
-					for (let y = 0; y < height; y++) {
-						for (let x = 0; x < width; x++) {
-							let cur = image[x][y];
-							let j = ImageDither.find_nearest(cur, palette);
-							image[x][y] = palette[j];
-							let err = cur - palette[j];
-							if (mode) {
-								image[x - 2][y + 1] += err * 3 / 48;
-								image[x + 1][y + 0] += err * 7 / 48;
-								image[x - 1][y + 1] += err * 5 / 48;
-								image[x + 2][y + 0] += err * 5 / 48;
-								image[x + 0][y + 1] += err * 7 / 48;
-								image[x + 1][y + 1] += err * 5 / 48;
-								image[x + 2][y + 1] += err * 3 / 48;
-								image[x - 2][y + 2] += err * 1 / 48;
-								image[x - 1][y + 2] += err * 3 / 48;
-								image[x + 0][y + 2] += err * 5 / 48;
-								image[x + 1][y + 2] += err * 3 / 48;
-								image[x + 2][y + 2] += err * 1 / 48;
-							} else {
-								image[x + 1][y + 0] += err * 7 / 16;
-								image[x - 1][y + 1] += err * 3 / 16;
-								image[x + 0][y + 1] += err * 5 / 16;
-								image[x + 1][y + 1] += err / 16;
-							}
-							imageData[i + 0] = image[x][y];
-							imageData[i + 1] = image[x][y];
-							imageData[i + 2] = image[x][y];
-							imageData[i + 3] = 255;
-							i += 4;
-						}
-					}
-				} else { // RGB dithering
-					for (let y = 0; y < height; y++) {
-						for (let x = 0; x < width; x++) {
-							let cur = image[x][y];
-							let j = ImageDither.find_nearest(cur, palette);
-							image[x][y] = structuredClone(palette[j]);
-							let err = ImageDither.pixel_sub(cur, palette[j]);
-							if (mode) {
-								image[x + 1][y + 0] = ImageDither.pixel_add(image[x + 1][y + 0], ImageDither.pixel_mul(err, 7 / 16));
-								image[x - 1][y + 1] = ImageDither.pixel_add(image[x - 1][y + 1], ImageDither.pixel_mul(err, 3 / 16));
-								image[x + 0][y + 1] = ImageDither.pixel_add(image[x + 0][y + 1], ImageDither.pixel_mul(err, 5 / 16));
-								image[x + 1][y + 1] = ImageDither.pixel_add(image[x + 1][y + 1], ImageDither.pixel_mul(err, 1 / 16));
-							} else {
-								image[x + 2][y + 0] = ImageDither.pixel_add(image[x + 2][y + 0], ImageDither.pixel_mul(err, 5 / 48));
-								image[x - 2][y + 1] = ImageDither.pixel_add(image[x - 2][y + 1], ImageDither.pixel_mul(err, 3 / 48));
-								image[x + 1][y + 0] = ImageDither.pixel_add(image[x + 1][y + 0], ImageDither.pixel_mul(err, 7 / 48));
-								image[x - 1][y + 1] = ImageDither.pixel_add(image[x - 1][y + 1], ImageDither.pixel_mul(err, 5 / 48));
-								image[x + 0][y + 1] = ImageDither.pixel_add(image[x + 0][y + 1], ImageDither.pixel_mul(err, 7 / 48));
-								image[x + 1][y + 1] = ImageDither.pixel_add(image[x + 1][y + 1], ImageDither.pixel_mul(err, 5 / 48));
-								image[x + 2][y + 1] = ImageDither.pixel_add(image[x + 2][y + 1], ImageDither.pixel_mul(err, 3 / 48));
-								image[x - 2][y + 2] = ImageDither.pixel_add(image[x - 2][y + 2], ImageDither.pixel_mul(err, 1 / 48));
-								image[x - 1][y + 2] = ImageDither.pixel_add(image[x - 1][y + 2], ImageDither.pixel_mul(err, 3 / 48));
-								image[x + 0][y + 2] = ImageDither.pixel_add(image[x + 0][y + 2], ImageDither.pixel_mul(err, 5 / 48));
-								image[x + 1][y + 2] = ImageDither.pixel_add(image[x + 1][y + 2], ImageDither.pixel_mul(err, 3 / 48));
-								image[x + 2][y + 2] = ImageDither.pixel_add(image[x + 2][y + 2], ImageDither.pixel_mul(err, 1 / 48));
-							}
-							imageData[i + 0] = image[x][y].r;
-							imageData[i + 1] = image[x][y].g;
-							imageData[i + 2] = image[x][y].b;
-							imageData[i + 3] = 255;
-							i += 4;
-						}
-					}
-				}
-				this.result = image; // contains result ({rgb} objects or gray-scale numbers) for further processing
-				this.imageData = imageData; // contains rgba list for preview
-			}
-			static indexOf(list, value) {
-				if (typeof value === 'number') {
-					return list.indexOf(value);
-				}
-				var i = 0;
-				for (let i = 0; i < list.length; i++) {
-					if (list[i].r != value.r) continue;
-					if (list[i].g != value.g) continue;
-					if (list[i].b != value.b) continue;
-					return i;
-				}
-				throw new Error("element not found");
-			}
-
-			toBytes(palette, rot, two_pixel_one_byte) {
-				// based on 2-bit index of pixel in palette
-				var outputData1 = [], outputData2 = [];
-				var width, height;
-				width = rot ? this.height : this.width;
-				height = rot ? this.width : this.height;
-
-				for (let y = 0; y < height; y++) {
-					let a1, a2;
-					for (let x = 0; x < width; x++) {
-						let x1 = rot ? height - 1 - y : x;
-						let y1 = rot ? x : y;
-						let i = ImageDither.indexOf(palette, this.result[x1][y1]);
-						if (two_pixel_one_byte) {
-							if (x % 2 == 0) {
-								a1 = [0, 3 * 16, 4 * 16][i];
-							} else {
-								a1 += [0, 3, 4][i];
-								outputData1.push(a1);
-							}
-						} else {
-							let j = x % 8;
-							if (i == -1) {
-								throw "index not found";
-							}
-							if (j == 0) {
-								a1 = 0;
-								a2 = 0;
-							}
-							if (i & 1) {
-								a1 += 0x80 >> j;
-							}
-							if (i & 2) {
-								a2 += 0x80 >> j;
-							}
-							if (j == 7 || x == width - 1) {
-								outputData1.push(a1);
-								outputData2.push(a2);
-							}
-						}
-					}
-				}
-				if (palette.length <= 2) {
-					outputData2 = [];
-				}
-				return { o1: outputData1, o2: outputData2 };
-			}
-		}
-
-		const seven_color = [
-			{ r: 255, g: 255, b: 0 },
-			{ r: 0, g: 255, b: 0 },
-			{ r: 0, g: 0, b: 0 },
-			{ r: 255, g: 0, b: 0 },
-			{ r: 255, g: 255, b: 255 },
-			{ r: 255, g: 128, b: 0 },
-			{ r: 0, g: 0, b: 255 }
-		];
-		var outputData;
-
-		function update_image() {
-			const image_file = document.getElementById("image_file");
-			var xy = document.getElementById("resolution").value.split("*");
-			canvas.width = xy[0];
-			canvas.height = xy[1];
-			original.width = canvas.width;
-			original.height = canvas.height;
-			if (image_file.files.length > 0) {
-				const file = image_file.files[0];
-				const canvas = document.getElementById("canvas");
-				const ctx = canvas.getContext("2d");
-				const image = new Image();
-				image.src = URL.createObjectURL(file);
-				image.onload = function (event) {
-					const canvas = document.getElementById("canvas");
-					const original = document.getElementById("original");
-					var rot = (xy[0] < xy[1]) ^ (image.width < image.height);
-					if (rot) {
-						canvas.width = xy[1];
-						canvas.height = xy[0];
-					} else {
-						canvas.width = xy[0];
-						canvas.height = xy[1];
-					}
-					original.width = canvas.width;
-					original.height = canvas.height;
-					document.getElementById("original").getContext("2d").drawImage(image, 0, 0, image.width, image.height, 0, 0, canvas.width, canvas.height);
-					ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, canvas.width, canvas.height);
-					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-					var image_dither = new ImageDither(canvas.width, canvas.height, imageData.data);
-					var mode = document.getElementById("dither_mode").checked;
-					var palette;
-					if (document.getElementById("bw").checked) {
-						palette = [0, 255];
-					} else if (document.getElementById("4gray").checked) {
-						palette = [0, 0x55, 0xaa, 255];
-					} else if (document.getElementById("bwr").checked || document.getElementById("bwr2").checked) {
-						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }];
-					} else if (document.getElementById("bwry").checked) {
-						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }, { r: 255, g: 255, b: 0 }];
-					} else if (document.getElementById("cmyk").checked) {
-						palette = seven_color;
-					}
-					image_dither.dither(palette, mode);
-					res = image_dither.toBytes(palette, rot, document.getElementById("bwr2").checked);
-					outputData = res.o1.concat(res.o2);
-					for (let i = 0; i < imageData.data.length; i++) {
-						imageData.data[i] = image_dither.imageData[i];
-					}
-					ctx.putImageData(imageData, 0, 0);
-					URL.revokeObjectURL(this.src);
-				}
-			}
-		}
-		update_image();
-
-		function get_position(canvas, x, y) {
-			let rect = canvas.getBoundingClientRect()
-			return {
-				x: x - rect.left * (canvas.width / rect.width),
-				y: y - rect.top * (canvas.height / rect.height)
-			}
-		}
-
-		function clear_canvas() {
-			if (confirm('确认清除屏幕?')) {
-				const canvas = document.getElementById('canvas');
-				const ctx = canvas.getContext("2d");
-				ctx.fillStyle = 'white';
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-			}
-		}
-
-		function horizon_clip_canvas() {
-			const canvas = document.getElementById('canvas');
-			const ctx = canvas.getContext("2d");
-			const sourceData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-			var newData = ctx.createImageData(canvas.width, canvas.height);
-			for (var i = 0, h = sourceData.height; i < h; i++) {
-				for (j = 0, w = sourceData.width; j < w; j++) {
-					newData.data[i * w * 4 + j * 4 + 0] =
-						sourceData.data[i * w * 4 + (w - j) * 4 + 0];
-					newData.data[i * w * 4 + j * 4 + 1] =
-						sourceData.data[i * w * 4 + (w - j) * 4 + 1];
-					newData.data[i * w * 4 + j * 4 + 2] =
-						sourceData.data[i * w * 4 + (w - j) * 4 + 2];
-					newData.data[i * w * 4 + j * 4 + 3] =
-						sourceData.data[i * w * 4 + (w - j) * 4 + 3];
-				}
-			}
-			ctx.putImageData(newData, 0, 0);
-		}
-
-		function vertial_clip_canvas() {
-			const canvas = document.getElementById('canvas');
-			const ctx = canvas.getContext("2d");
-			const sourceData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-			var newData = ctx.createImageData(canvas.width, canvas.height);
-			for (var i = 0, h = sourceData.height; i < h; i++) {
-				for (var j = 0, w = sourceData.width; j < w; j++) {
-					newData.data[i * w * 4 + j * 4 + 0] =
-						sourceData.data[(h - i) * w * 4 + j * 4 + 0];
-					newData.data[i * w * 4 + j * 4 + 1] =
-						sourceData.data[(h - i) * w * 4 + j * 4 + 1];
-					newData.data[i * w * 4 + j * 4 + 2] =
-						sourceData.data[(h - i) * w * 4 + j * 4 + 2];
-					newData.data[i * w * 4 + j * 4 + 3] =
-						sourceData.data[(h - i) * w * 4 + j * 4 + 3];
-				}
-			}
-			ctx.putImageData(newData, 0, 0);
-		}
-
-		function delay(ms) {
-			return new Promise(resolve => setTimeout(resolve, ms));
-		}
-		document.getElementById("go").addEventListener("click", async event => {
-			var PACK_LEN, BURST_NUM;
-			const textEncoder = new TextEncoder();
-			const utf8array = textEncoder.encode(document.getElementById("tag_name").value);
-			if (utf8array.length > 12){
-				alert("名字太长");
-				return;
-			}
-			for (e of document.getElementsByName("pack_len")) {
-				if (e.checked) {
-					PACK_LEN = Number(e.value);
-					BURST_NUM = Math.round(8192 / PACK_LEN);
-					break;
-				}
-			}
-			try {
-				await priceTag.request();
-				for (var retry = 0; ;) {
-					try {
-						await priceTag.connect();
-						break;
-					}
-					catch (error) {
-						console.error(error);
-						if (++retry == 4) {
-							throw error;
-						}
-						console.log("retry");
-					}
-				}
-				var value = await priceTag.readProperty();
-				var width = value.getUint16(0, true);
-				var height = value.getUint16(2, true);
-				var type = value.getUint8(4);
-				console.log(`${width}*${height}, type=${type}`);
-				await priceTag.writeCommand(Uint8Array.of(82)); //Reset
-				for(var retry = 0;; retry++){
-					var r = await priceTag.readStatus();
-					if (r.getUint8(0) == 0x42) {
-						console.log('initialized');
-						break;
-					} else {
-						if (retry < 10){
-							await delay(20);
-						}else{
-							throw "md5 uninitialized";
-						}
-					}
-				}
-				
-					const canvas = document.getElementById("canvas");
-					const ctx = canvas.getContext("2d");
-					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-					var image_dither = new ImageDither(canvas.width, canvas.height, imageData.data);
-					var mode = document.getElementById("dither_mode").checked;
-					var palette;
-					if (document.getElementById("bw").checked) {
-						palette = [0, 255];
-					} else if (document.getElementById("4gray").checked) {
-						palette = [0, 0x55, 0xaa, 255];
-					} else if (document.getElementById("bwr").checked || document.getElementById("bwr2").checked) {
-						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }];
-					} else if (document.getElementById("bwry").checked) {
-						palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }, { r: 255, g: 0, b: 0 }, { r: 255, g: 255, b: 0 }];
-					} else if (document.getElementById("cmyk").checked) {
-						palette = seven_color;
-					}
-					image_dither.dither(palette, mode);
-					var xy = document.getElementById("resolution").value.split("*");
-					var rot = (xy[0] < xy[1]) ^ (canvas.width < canvas.height);
-					res = image_dither.toBytes(palette, rot, document.getElementById("bwr2").checked);
-					outputData = res.o1.concat(res.o2);
-					for (let i = 0; i < imageData.data.length; i++) {
-						imageData.data[i] = image_dither.imageData[i];
-					}
-					ctx.putImageData(imageData, 0, 0);
-
-				var binData = structuredClone(outputData);
-
-				while (binData.length % PACK_LEN) {
-					binData.push(0);
-				}
-				for (i = 0; i < binData.length; i += PACK_LEN) {
-					chunk = Uint8Array.from(binData.slice(i, i + PACK_LEN));
-					await priceTag.writeData(chunk, i % (PACK_LEN * BURST_NUM) == 0 || i + PACK_LEN >= binData.length);
-					document.getElementById("progressBar").value = Math.round(i / binData.length * 100);
-					document.getElementById("progress").innerHTML = `${i}/${binData.length}`;
-				}
-				await priceTag.writeCommand(Uint8Array.of(0x46));
-				for(var retry = 0;; retry++){
-					var r = await priceTag.readStatus();
-					if (r.getUint8(0) == 0x44) {
-						console.log('finalized');
-						break;
-					} else {
-						if (retry < 10){
-							await delay(20);
-						}else{
-							throw "md5 unfinalized";
-						}
-					}
-				}
-				document.getElementById("progressBar").value = 100;
-				document.getElementById("progress").innerHTML = "";
-				if (utf8array.length > 0){
-					await priceTag.rename(utf8array);
-				}
-				
-			} catch (error) {
-				console.error(error);
-			} finally {
-				priceTag.disconnect();
-			}
-		});
-/*****************************以上是移植的**************************************/
-		document.body.onload = () => {
-			setInterval(() => {
-				const { localeTimeString, year, month, day, week } = getUnixTime();
-				document.getElementById('time-setter').innerText = `设置时间为：${year}-${month}-${day} ${localeTimeString} 星期${week}`;
-			}, 1000);
-
-			const canvas = document.getElementById('canvas');
-			const ctx = canvas.getContext("2d");
-			ctx.fillStyle = 'white';
-			ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-			let is_allow_drawing = false;
-			let is_allow_move_editor = false;
-			const image_mode = document.getElementById('canvas-mode');
-			const paint_size = document.getElementById('paint-size');
-			const paint_color = document.getElementById('paint-color');
-			const editor = document.getElementById('edit-font');
-			const font = document.getElementById('font');
-			//document.getElementById('dithering').value = 'bayer';
-			image_mode.value = 'paint';
-			paint_color.value = 'black';
-			font.value = '黑体';
-
-			editor.onmousemove = function (e) {
-				editor.style.fontSize = `${paint_size.value * 10}px`;
-				editor.style.color = paint_color.value;
-				editor.style.fontFamily = font.value;
-				editor.style.fontWeight = 'bold';
-
-				if (is_allow_move_editor) {
-					const { x, y } = get_position(canvas, e.clientX, e.clientY);
-					if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
-						return;
-					}
-
-					editor.style.left = `${e.clientX - 20}px`;
-					editor.style.top = `${e.clientY - 20}px`;
-
-				}
-			}
-
-			editor.onmousedown = function (e) {
-				is_allow_move_editor = true;
-			}
-
-			editor.onmouseup = function (e) {
-				is_allow_move_editor = false;
-			}
-
-			document.getElementById('update-text').onclick = function () {
-				if (!editor.value.length) {
-					alert('请先输入文字');
-					return;
-				}
-				editor.style.display = 'none';
-				ctx.beginPath();
-				ctx.font = `bold ${paint_size.value * 10}px ${font.value}`;
-				ctx.fillStyle = paint_color.value;
-				const { x, y } = get_position(canvas, parseInt(editor.style.left), parseInt(editor.style.top) + paint_size.value * 10);
-				ctx.fillText(editor.value, x, y);
-			}
-
-			document.getElementById('resolution').onchange = function () {
-				const size = document.getElementById('resolution').value;
-				console.log(size)
-				if(size == "128*296"){
-					canvasRotate = 90;
-				}
-				else{
-					canvasRotate = 0;
-				}
-				width = parseInt(size.split('*')[0])
-				height = parseInt(size.split('*')[1])
-				document.getElementById('canvas').width = width;
-				document.getElementById('canvas').height = height;
-				update_image();
-			}
-
-			image_mode.onchange = function (e) {
-				if (image_mode.value === 'font') {
-					document.getElementById('update-text').style.display = 'inline-block';
-					document.getElementById('font').style.display = 'inline-block';
-
-					editor.style.display = 'block';
-					editor.style.left = `${e.clientX}px`;
-					editor.style.top = `${e.clientY}px`;
-					return;
-				}
-				document.getElementById('update-text').style.display = 'none';
-				document.getElementById('font').style.display = 'none';
-				editor.style.display = 'none';
-			}
-
-			paint_size.onchange = function () {
-				if (image_mode.value === 'font') {
-					editor.style.fontSize = `${paint_size.value * 10}px`;
-				}
-			}
-
-			paint_color.onchange = function () {
-				if (image_mode.value === 'font') {
-					editor.style.color = paint_color.value;
-				}
-			}
-
-			font.onchange = function () {
-				if (image_mode.value === 'font') {
-					editor.style.fontFamily = font.value;
-				}
-			}
-
-			canvas.onmousedown = function (e) {
-				let ele = get_position(canvas, e.clientX, e.clientY)
-				let { x, y } = ele
-
-				switch (image_mode.value) {
-					case 'paint':
-						is_allow_drawing = true;
-						ctx.beginPath();
-						ctx.moveTo(x, y);
-						break;
-					case 'font':
-						editor.style.display = 'block';
-						editor.style.left = `${e.clientX}px`;
-						editor.style.top = `${e.clientY}px`;
-						editor.style.fontSize = `${paint_size.value * 10}px`;
-						editor.style.color = paint_color.value;
-						editor.style.fontFamily = font.value;
-						editor.style.fontWeight = 'bold';
-
-						break
-					default:
-						break;
-				}
-			};
-
-			canvas.onmousemove = (e) => {
-				let ele = get_position(canvas, e.clientX, e.clientY)
-				let { x, y } = ele;
-				switch (image_mode.value) {
-					case 'paint':
-						if (is_allow_drawing) {
-							ctx.lineWidth = paint_size.value;
-							ctx.strokeStyle = paint_color.value;
-							ctx.lineTo(x, y);
-							ctx.stroke();
-						}
-						break;
-					case 'font':
-						break;
-
-					default:
-						break;
-				}
-			}
-
-			canvas.onmouseup = function () {
-				switch (image_mode.value) {
-					case 'paint':
-						is_allow_drawing = false;
-						break;
-
-					case 'font':
-						editor.focus();
-						is_allow_move_editor = false;
-						break;
-
-					default:
-						break;
-				}
-			}
-
-			canvas.onmouseleave = function () {
-				if (image_mode.value === 'paint') {
-					is_allow_drawing = false;
-				}
-			}
-		}
-
-
-	</script>
+		<fieldset>
+        	<legend>蓝牙传图</legend>
+			<div class="flex-container">
+				<input type="file" id="image_file" onchange="updateImage(true)" accept=".png,.jpg,.bmp,.webp,.jpeg">
+			</div>
+			<div class="flex-container options">
+				<div class="flex-group debug">
+					<label for="canvasSize">画布尺寸：</label>
+					<select id="canvasSize" onchange="updateCanvasSize()">
+						<option value="1.54_152_152">1.54 (152x152)</option>
+						<option value="1.54_200_200">1.54 (200x200)</option>
+						<option value="2.13_212_104">2.13 (212x104)</option>
+						<option value="2.13_250_122">2.13 (250x122)</option>
+						<option value="2.66_296_152">2.66 (296x152)</option>
+						<option value="2.9_296_128">2.9 (296x128)</option>
+						<option value="2.9_384_168">2.9 (384x168)</option>
+						<option value="3.5_384_184">3.5 (384x184)</option>
+						<option value="3.7_416_240">3.7 (416x240)</option>
+						<option value="3.97_800_480">3.97 (800x480)</option>
+						<option value="4.2_400_300">4.2 (400x300)</option>
+						<option value="5.79_792_272">5.79 (792x272)</option>
+						<option value="7.5_800_480" selected>7.5 (800x480)</option>
+						<option value="5.83_600_448">5.83 (600x448)</option>
+						<option value="7.5_640_384">7.5 (640x384)</option>
+						<option value="10.2_960_640">10.2 (960x640)</option>
+						<option value="10.85_1360_480">10.85 (1360x480)</option>
+						<option value="11.6_960_640">11.6 (960x640)</option>
+						<option value="4E_600_400">4E (600x400)</option>
+						<option value="7.3E6">7.3E6 (480x800)</option>
+					</select>
+				</div>
+				<div class="flex-group debug">
+					<label for="ditherMode">颜色模式：</label>
+					<select id="ditherMode" onchange="updateImage(false)">
+						<option value="blackWhiteColor">双色(黑白)</option>
+						<option value="threeColor" selected>三色(黑白红)</option>
+						<option value="fourColor">四色(黑白红黄)</option>
+						<option value="sixColor">六色(黑白红黄蓝绿)</option>
+					</select>
+				</div>
+				<div class="flex-group">
+					<label for="ditherType">抖动算法：</label>
+					<select id="ditherType" onchange="updateImage(false)">
+						<option value="floydSteinberg">Floyd-Steinberg</option>
+						<option value="atkinson" selected>Atkinson</option>
+						<option value="bayer">Bayer</option>
+						<option value="stucki">Stucki</option>
+						<option value="jarvis">Jarvis-Judice-Ninke</option>
+					</select>
+				</div>
+				<div class="flex-group">
+					<label for="ditherStrength">抖动强度：</label>
+					<input type="range" min="0" max="5" step="0.1" value="1.0" id="ditherStrength" oninput="updateImage(false)">
+				</div>
+				<div class="flex-group">
+					<label for="contrast">对比度：</label>
+					<input type="range" min="0.5" max="2" step="0.1" value="1.2" id="contrast" oninput="updateImage(false)">
+				</div>
+			</div>
+			<div class="flex-container options">
+				<div class="flex-group debug">
+					<label for="mtusize">MTU：</label>
+					<input type="number" id="mtusize" value="244" min="0" max="255">
+					<label for="interleavedcount">确认间隔：</label>
+					<input type="number" id="interleavedcount" value="50" min="0" max="500">
+				</div>
+			</div>
+			<div class="status-bar"><b>状态：</b><span id="status"></span></div>
+			<div class="flex-container">
+				<div class="flex-group">
+					<button id="clearcanvasbutton" type="button" class="secondary" onclick="clearCanvas()">清除画布</button>
+					<button id="downloadArray" type="button" class="secondary debug" onclick="downloadDataArray()">下载数组</button>
+					<button id="sendimgbutton" type="button" class="primary" onclick="sendimg()">发送图片</button>
+				</div>
+			</div>
+			<div class="canvas-container">
+				<div class="canvas-title"></div>
+				<canvas id="canvas" width="400" height="300"></canvas>
+				<div class="flex-container canvas-tools">
+					<div class="flex-group">
+						<button id="brush-mode" title="画笔" class="tool-button">✏️</button>
+						<button id="eraser-mode" title="橡皮擦" class="tool-button">🧽</button>
+						<button id="text-mode" title="添加文字" class="tool-button">T</button>
+					</div>
+					<div class="flex-group brush-tools">
+						<label for="brush-color">画笔：</label>
+						<select id="brush-color">
+                            <option value="#000000">黑色</option>
+                            <option value="#FF0000">红色</option>
+                            <option value="#FFFF00">黄色</option>
+							<option value="#00FF00">绿色</option>
+							<option value="#0000FF">蓝色</option>
+                            <option value="#FFFFFF">白色</option>
+                        </select>
+						<label for="brush-size">粗细：</label>
+						<input type="number" id="brush-size" value="2" min="1" max="100">
+					</div>
+				</div>
+				<div class="flex-container canvas-tools">
+					<div class="flex-group text-tools">
+						<label for="font-family">字体：</label>
+						<select id="font-family">
+								<option value="Arial">Arial</option>
+								<option value="sans-serif">Sans-serif</option>
+								<option value="monospace">Monospace</option>
+								<option value="SimSun">宋体</option>
+								<option value="SimHei">黑体</option>
+								<option value="Microsoft Yahei">微软雅黑</option>
+								<option value="Microsoft JhengHei">微软正黑体</option>
+								<option value="KaiTi">楷体</option>
+								<option value="NSimSun">新宋体</option>
+								<option value="FangSong">仿宋</option>
+								<option value="YouYuan">幼圆</option>
+								<option value="LiSu">隶书</option>
+								<option value="STHeiti">华文黑体</option>
+								<option value="STXihei">华文细黑</option>
+								<option value="STKaiti">华文楷体</option>
+								<option value="STSong">华文宋体</option>
+								<option value="STFangsong">华文仿宋</option>
+								<option value="STZhongsong">华文中宋</option>
+								<option value="STHupo">华文琥珀</option>
+								<option value="STXinwei">华文新魏</option>
+								<option value="STLiti">华文隶书</option>
+								<option value="STXingkai">华文行楷</option>
+								<option value="FZShuTi">方正舒体</option>
+								<option value="FZYaoti">方正姚体</option>
+								<option value="PingFang SC">苹方</option>
+								<option value="Source Han Sans CN">思源黑体</option>
+								<option value="Source Han Serif SC">思源宋体</option>
+								<option value="WenQuanYi Micro Hei">文泉驿微米黑</option>
+							</optgroup>
+						</select>
+						<label for="font-size">大小：</label>
+						<input type="number" id="font-size" value="16" min="1" max="100">
+					</div>
+					<div class="flex-group text-tools">
+						<input type="text" id="text-input" placeholder="输入文字" style="width:150px">
+						<button id="text-bold" title="粗体">B</button>
+						<button id="text-italic" title="斜体">I</button>
+						<button id="add-text-btn" class="primary">添加文字</button>
+					</div>
+				</div>
+			</div>
+        </fieldset>
+		<div class="footer">
+			<span class="copy">&copy; 2025 tsl0922.</span>
+			<span class="links">
+				<a href="https://github.com/tsl0922/EPD-nRF5">Github</a>
+				<a href="https://qm.qq.com/q/SckzhfDxuu">交流群</a>
+				<a href="https://m.tb.cn/h.6HyQcD7?tk=RQvUVjGecdm">支持项目</a>
+				<a href="?debug=true" id="debug-toggle">开发模式</a>
+			</span>
+		</div>
+    </div>
+    <script type="text/javascript" src="js/dithering.js?v=20250607"></script>
+    <script type="text/javascript" src="js/paint.js?v=20250607"></script>
+    <script type="text/javascript" src="js/main.js?v=20250607"></script>
 </body>
 
 </html>
